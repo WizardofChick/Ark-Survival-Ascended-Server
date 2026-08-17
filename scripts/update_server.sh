@@ -73,11 +73,19 @@ server_needs_update() {
   
   # Use the enhanced function from common.sh that includes dirty flag check
   if server_needs_update_or_restart; then
-    # Check if this is due to a dirty flag (other instance updated) vs actual update
+    # Check if this is due to a dirty flag (other instance updated) vs coordination cycle vs actual update
     if has_dirty_flag; then
       echo "[INFO] ✅ RESTART REQUIRED - Instance marked dirty by another instance that updated server files"
       current_build_id=$(get_current_build_id)  # Get current for consistency
       return 0  # Restart needed
+    elif declare -f update_coordination_has_active_cycle >/dev/null 2>&1 && update_coordination_has_active_cycle; then
+      echo "[INFO] ✅ COORDINATION CYCLE ACTIVE - Update cycle in progress by leader"
+      if update_coordination_refresh_state && [ -n "${UPDATE_COORDINATION_STATE_TARGET_BUILD_ID:-}" ]; then
+        current_build_id="${UPDATE_COORDINATION_STATE_TARGET_BUILD_ID}"
+      else
+        current_build_id=$(get_current_build_id)
+      fi
+      return 0  # Coordination update needed
     else
       # This is a real update case
       local current_build=$(get_current_build_id)

@@ -35,7 +35,7 @@ container_signal_shutdown() {
 }
 
 trap container_signal_shutdown SIGTERM SIGINT
-rm -f "$VERIFIED_SHUTDOWN_MARKER" 2>/dev/null || true
+rm -f "$VERIFIED_SHUTDOWN_MARKER" /home/pok/shutdown_complete.flag /home/pok/shutdown.flag /home/pok/stop_monitor.flag /home/pok/restart_reason.flag /home/pok/*.pid /home/pok/expected_build_id.txt /tmp/restart_in_progress /tmp/enhanced_shutdown_display 2>/dev/null || true
 
 if [[ "${BASH_SOURCE[0]}" != "${0}" ]]; then
   return 0
@@ -757,9 +757,8 @@ MONITOR_PID=$!
 } &
 RESTART_MONITOR_PID=$!
 
-# Launch the update monitor in background if API mode is not enabled
-if env_value_is_truthy "${UPDATE_SERVER:-FALSE}" && \
-    { [ "${API}" != "TRUE" ] || rollback_state_is_active; }; then
+# Launch the update monitor in background if UPDATE_SERVER is enabled
+if env_value_is_truthy "${UPDATE_SERVER:-FALSE}"; then
   echo "[INFO] Starting update monitor in background..."
   # Remove residual stop flag from previous container run before launching monitor
   rm -f /home/pok/stop_monitor.flag 2>/dev/null || true
@@ -774,11 +773,6 @@ if env_value_is_truthy "${UPDATE_SERVER:-FALSE}" && \
   
   MONITOR_PID=$!
   echo "[INFO] Update monitor started with PID: $MONITOR_PID"
-elif [ "${API}" = "TRUE" ] && env_value_is_truthy "${UPDATE_SERVER:-FALSE}"; then
-  echo "⚠️ [WARNING] Update monitor is disabled when API=TRUE"
-  echo "⚠️ [WARNING] You must manually update the server using the POK-manager.sh script with:"
-  echo "⚠️           ./POK-manager.sh -stop <instance_name>"
-  echo "⚠️           ./POK-manager.sh -start <instance_name>"
 fi
 
 if ! shared_update_policy_allows_automatic_updates; then

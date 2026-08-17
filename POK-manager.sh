@@ -2604,17 +2604,10 @@ publish_shared_update_policy() {
       max_notice_minutes="$notice_minutes"
     fi
 
-    if [ "$api_enabled" = "TRUE" ] || [ "$update_enabled" != "TRUE" ]; then
+    if [ "$update_enabled" != "TRUE" ]; then
       automatic_updates_allowed="FALSE"
       [ -z "$blocking_instances" ] || blocking_instances+=","
-      blocking_instances+="${instance_name}:"
-      if [ "$api_enabled" = "TRUE" ]; then
-        blocking_instances+="API_TRUE"
-      fi
-      if [ "$update_enabled" != "TRUE" ]; then
-        [ "$api_enabled" != "TRUE" ] || blocking_instances+="+"
-        blocking_instances+="UPDATE_SERVER_FALSE"
-      fi
+      blocking_instances+="${instance_name}:UPDATE_SERVER_FALSE"
     fi
   done < <(_coordination_get_compose_files)
 

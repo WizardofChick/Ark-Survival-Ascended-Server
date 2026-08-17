@@ -1297,12 +1297,18 @@ mark_other_instances_dirty() {
   echo "[INFO] Finished marking other instances as dirty"
 }
 
-# Enhanced function to check if server needs update (includes dirty flag check)
+# Enhanced function to check if server needs update (includes dirty flag and coordination check)
 server_needs_update_or_restart() {
   # First check if this instance has a dirty flag (marked by another instance)
   if has_dirty_flag; then
     echo "[INFO] Instance has dirty flag - restart required due to server files update by another instance"
     return 0  # Needs restart
+  fi
+
+  # Check if an active coordination cycle exists
+  if declare -f update_coordination_has_active_cycle >/dev/null 2>&1 && update_coordination_has_active_cycle; then
+    echo "[INFO] Active update coordination cycle detected - restart/update required"
+    return 0
   fi
   
   # Then do the normal build ID comparison
