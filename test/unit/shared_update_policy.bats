@@ -4,7 +4,7 @@ load '../test_helper/bats-support/load.bash'
 load '../test_helper/bats-assert/load.bash'
 load '../test_helper/project.bash'
 
-@test "manager aggregate policy includes stopped API instances and writes it to every compose file" {
+@test "manager aggregate policy allows API instances when UPDATE_SERVER=TRUE and writes it to every compose file" {
   run env REPO_ROOT="$PROJECT_ROOT" BASE_DIR="$BATS_TEST_TMPDIR/shared-policy" POK_MANAGER_TEST_MODE=1 bash -lc '
     set -e
     mkdir -p "$BASE_DIR/Instance_plain" "$BASE_DIR/Instance_api"
@@ -34,9 +34,44 @@ EOF
   '
 
   assert_success
+  assert_output --partial "plain_policy=TRUE"
+  assert_output --partial "api_policy=TRUE"
+  assert_output --partial "blockers="
+}
+
+@test "manager aggregate policy blocks auto-updates when any instance has UPDATE_SERVER=FALSE" {
+  run env REPO_ROOT="$PROJECT_ROOT" BASE_DIR="$BATS_TEST_TMPDIR/shared-policy-blocked" POK_MANAGER_TEST_MODE=1 bash -lc '
+    set -e
+    mkdir -p "$BASE_DIR/Instance_plain" "$BASE_DIR/Instance_api"
+    cat > "$BASE_DIR/Instance_plain/docker-compose-plain.yaml" <<EOF
+services:
+  asaserver:
+    environment:
+      - INSTANCE_NAME=plain
+      - TZ=UTC
+      - API=FALSE
+      - UPDATE_SERVER=TRUE
+EOF
+    cat > "$BASE_DIR/Instance_api/docker-compose-api.yaml" <<EOF
+services:
+  asaserver:
+    environment:
+      - INSTANCE_NAME=api
+      - TZ=UTC
+      - API=TRUE
+      - UPDATE_SERVER=FALSE
+EOF
+    source "$REPO_ROOT/POK-manager.sh"
+    normalize_update_coordination_assignments
+    echo "plain_policy=$(grep POK_SHARED_AUTOMATIC_UPDATES "$BASE_DIR/Instance_plain/docker-compose-plain.yaml" | sed "s/.*=//")"
+    echo "api_policy=$(grep POK_SHARED_AUTOMATIC_UPDATES "$BASE_DIR/Instance_api/docker-compose-api.yaml" | sed "s/.*=//")"
+    echo "blockers=$(grep POK_SHARED_BLOCKING_INSTANCES "$BASE_DIR/Instance_plain/docker-compose-plain.yaml" | sed "s/.*=//")"
+  '
+
+  assert_success
   assert_output --partial "plain_policy=FALSE"
   assert_output --partial "api_policy=FALSE"
-  assert_output --partial "blockers=api:API_TRUE"
+  assert_output --partial "blockers=api:UPDATE_SERVER_FALSE"
 }
 
 @test "direct manager update refuses to mutate shared files while an instance is running" {

@@ -791,6 +791,17 @@ while true; do
   fi
   
   if [ "${UPDATE_SERVER^^}" = "TRUE" ] && [ "$SHARED_AUTOMATIC_UPDATES_ENABLED" = true ]; then
+    # Keep instance presence fresh for multi-instance coordination
+    update_coordination_touch_instance_presence >/dev/null 2>&1 || true
+
+    # Fast check on every loop: active coordination cycle or dirty flag from another instance
+    if has_dirty_flag || (declare -f update_coordination_has_active_cycle >/dev/null 2>&1 && update_coordination_has_active_cycle); then
+      display_monitor_status "🔄 Active update cycle or dirty flag detected! Launching update_server.sh..." "WARNING" "true"
+      export API_CONTAINER_RESTART="TRUE"
+      export RESTART_NOTICE_MINUTES="${RESTART_NOTICE_MINUTES:-30}"
+      /home/pok/scripts/update_server.sh
+    fi
+
     # Check for updates at the interval specified by CHECK_FOR_UPDATE_INTERVAL
     current_time=$(TZ="${TZ}" date +%s)
     last_update_check_time=${last_update_check_time:-0}

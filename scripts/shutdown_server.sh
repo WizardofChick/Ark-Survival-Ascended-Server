@@ -226,6 +226,23 @@ shutdown_log_confirmed_since_checkpoint() {
   grep -qF "World Save Complete. Took:" "$log_file" 2>/dev/null
 }
 
+shutdown_exit_confirmed_since_checkpoint() {
+  local log_file="${ASA_DIR}/ShooterGame/Saved/Logs/ShooterGame.log"
+  local current_inode=""
+  local current_size=0
+
+  [ -f "$log_file" ] || return 1
+  current_inode="$(stat -Lc '%i' "$log_file" 2>/dev/null || true)"
+  current_size="$(stat -Lc '%s' "$log_file" 2>/dev/null || echo 0)"
+
+  if [ -n "$SAVE_CHECKPOINT_LOG_INODE" ] && [ "$current_inode" = "$SAVE_CHECKPOINT_LOG_INODE" ] && [ "$current_size" -ge "$SAVE_CHECKPOINT_LOG_SIZE" ]; then
+    tail -c "+$((SAVE_CHECKPOINT_LOG_SIZE + 1))" "$log_file" 2>/dev/null | grep -qE "Closing by request|DestroyASAClustersFolderMutex"
+    return $?
+  fi
+
+  grep -qE "Closing by request|DestroyASAClustersFolderMutex" "$log_file" 2>/dev/null
+}
+
 shutdown_print_file_change() {
   local new_state="$1"
   local old_size="${SAVE_CHECKPOINT_FILE_STATE%%|*}"
@@ -259,6 +276,14 @@ shutdown_verify_command_save() {
 
   echo "${stage_label}: sending RCON command '${rcon_command}' (timeout: ${wait_seconds}s)..."
   if ! send_rcon_command "$rcon_command" "$wait_seconds"; then
+    if [ "$rcon_command" = "DoExit" ]; then
+      sleep 1
+      if shutdown_log_confirmed_since_checkpoint || shutdown_exit_confirmed_since_checkpoint || ! shutdown_server_process_running; then
+        SAVE_CONFIRMATION_SOURCE="log"
+        echo "${stage_label}: DoExit initiated server closure and verified save."
+        return 0
+      fi
+    fi
     echo "Error: ${stage_label} RCON command failed; save was not verified." >&2
     return 1
   fi
@@ -268,6 +293,14 @@ shutdown_verify_command_save() {
       SAVE_CONFIRMATION_SOURCE="log"
       echo "${stage_label}: save confirmed by a new 'World Save Complete. Took:' log entry."
       return 0
+    fi
+
+    if [ "$rcon_command" = "DoExit" ] && shutdown_exit_confirmed_since_checkpoint; then
+      if shutdown_log_confirmed_since_checkpoint || ! shutdown_server_process_running; then
+        SAVE_CONFIRMATION_SOURCE="log"
+        echo "${stage_label}: server exit and save confirmed by log / process state."
+        return 0
+      fi
     fi
 
     if [ -n "$SAVE_CHECKPOINT_FILE" ] && [ -f "$SAVE_CHECKPOINT_FILE" ]; then
@@ -313,6 +346,10 @@ verified_saveworld() {
 
 verified_doexit_save() {
   if shutdown_verify_command_save "DoExit" "Stage 2 DoExit save"; then
+    shutdown_write_verified_marker
+    return 0
+  fi
+  if ! shutdown_server_process_running && shutdown_verified_marker_is_fresh; then
     shutdown_write_verified_marker
     return 0
   fi

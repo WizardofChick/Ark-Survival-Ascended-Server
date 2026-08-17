@@ -131,7 +131,10 @@ common_init() {
   STEAM_COMPAT_DATA_PATH="/home/pok/.steam/steam/steamapps/compatdata/${APPID}"
   STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/pok/.steam/steam"
   PID_FILE="/home/pok/${INSTANCE_NAME}_ark_server.pid"
-  TEMP_DOWNLOAD_ROOT="${TEMP_DOWNLOAD_ROOT:-/tmp}"
+  # Keep multi-gigabyte SteamCMD staging on the shared server filesystem.
+  # Container /tmp normally lives in Docker's writable layer, which may be
+  # much smaller than the host filesystem already validated for ASA updates.
+  TEMP_DOWNLOAD_ROOT="${TEMP_DOWNLOAD_ROOT:-${ASA_DIR}/.pok-manager/update/staging}"
   TEMP_DOWNLOAD_PREFIX="arkserver_download"
 
   RCON_HOST="localhost"
@@ -1294,12 +1297,18 @@ mark_other_instances_dirty() {
   echo "[INFO] Finished marking other instances as dirty"
 }
 
-# Enhanced function to check if server needs update (includes dirty flag check)
+# Enhanced function to check if server needs update (includes dirty flag and coordination check)
 server_needs_update_or_restart() {
   # First check if this instance has a dirty flag (marked by another instance)
   if has_dirty_flag; then
     echo "[INFO] Instance has dirty flag - restart required due to server files update by another instance"
     return 0  # Needs restart
+  fi
+
+  # Check if an active coordination cycle exists
+  if declare -f update_coordination_has_active_cycle >/dev/null 2>&1 && update_coordination_has_active_cycle; then
+    echo "[INFO] Active update coordination cycle detected - restart/update required"
+    return 0
   fi
   
   # Then do the normal build ID comparison
