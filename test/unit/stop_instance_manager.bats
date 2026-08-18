@@ -79,6 +79,7 @@ EOF
       fi
     }
     _instance_has_running_server_process() { return 0; }
+    _instance_confirm_no_server_process_for_fast_removal() { return 1; }
     _run_parallel_shutdown_stage() { echo "stage:$1:$2:${*:3}"; return 0; }
     _wait_for_shutdown_server_processes() { return 0; }
     compose_cmd() { echo "compose:$*"; }

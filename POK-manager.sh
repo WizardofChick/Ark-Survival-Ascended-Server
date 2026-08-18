@@ -4659,11 +4659,7 @@ _stop_verified_containers_in_parallel() {
 
   echo "🛑 Removing verified containers in parallel..."
   for instance in "${instances[@]}"; do
-    if _verified_shutdown_instance_was_idle "$instance"; then
-      (stop_instance "$instance" "skip_save_idle") &
-    else
-      (stop_instance "$instance" "skip_save") &
-    fi
+    (stop_instance "$instance" "skip_save_idle") &
     stop_pids["$instance"]=$!
   done
 
@@ -4674,16 +4670,14 @@ _stop_verified_containers_in_parallel() {
       continue
     fi
 
-    if _verified_shutdown_instance_was_idle "$instance"; then
-      checkpoint=$(_verified_shutdown_log_checkpoint "$instance")
-      completion_count=$(_save_completion_count_since "$instance" "$checkpoint")
-      if [ "$completion_count" -ge 2 ]; then
-        echo "  ✅ ${instance}: container shutdown confirmed ${completion_count} fresh world saves in ShooterGame.log."
-      elif [ "$completion_count" -eq 1 ]; then
-        echo "  ✅ ${instance}: container shutdown confirmed a fresh world save in ShooterGame.log."
-      else
-        echo "  ℹ️ ${instance}: no fresh world-save entry was emitted during removal; this is expected when ASA was already stopped."
-      fi
+    checkpoint=$(_verified_shutdown_log_checkpoint "$instance")
+    completion_count=$(_save_completion_count_since "$instance" "$checkpoint")
+    if [ "$completion_count" -ge 2 ]; then
+      echo "  ✅ ${instance}: container shutdown confirmed ${completion_count} fresh world saves in ShooterGame.log."
+    elif [ "$completion_count" -eq 1 ]; then
+      echo "  ✅ ${instance}: container shutdown confirmed a fresh world save in ShooterGame.log."
+    else
+      echo "  ℹ️ ${instance}: no fresh world-save entry was emitted during removal; this is expected when ASA was already stopped."
     fi
   done
 
