@@ -222,7 +222,7 @@ shutdown_server_for_update() {
   fi
 
   echo "[INFO] Both save stages verified. Ready for staging update."
-  if update_coordination_has_active_cycle && update_coordination_instance_is_participant; then
+  if update_coordination_has_active_cycle; then
     if ! update_coordination_mark_shutdown_ready; then
       echo "[ERROR] Saves were verified, but this instance could not acknowledge the shared pre-update barrier." >&2
       return 1
@@ -327,26 +327,62 @@ main() {
       shutdown_server_for_update || return 1
       trigger_container_restart "DIRTY_RESTART" "$current_build_id"
     elif update_coordination_enabled; then
-      # Coordinated multi-instance path. The configured master is the only
-      # instance allowed to lead the shared update/startup cycle.
-      if update_coordination_is_master_role; then
-        if ! update_coordination_begin_cycle "$current_build_id"; then
+      # Coordinated multi-instance path.
+      if update_coordination_has_active_cycle; then
+        if update_coordination_is_active_leader; then
+          echo "[INFO] This instance is the active coordination leader and will lead the shared update cycle"
+          update_coordination_start_heartbeat
+
+          local update_notice_minutes
+          update_notice_minutes=${RESTART_NOTICE_MINUTES:-30}
+          echo "[INFO] Notifying players about update with $update_notice_minutes minute notice"
+          notify_players_of_update $update_notice_minutes
+
+          echo "[INFO] Countdown completed. Stopping server for update..."
+          shutdown_server_for_update || return 1
+          echo "[INFO] Server shutdown confirmed. Update will be applied during container startup."
+          trigger_container_restart "UPDATE_RESTART" "$current_build_id"
+        else
+          echo "[INFO] Active coordination cycle detected (Leader: ${UPDATE_COORDINATION_STATE_ACTIVE_LEADER_INSTANCE:-leader})."
+          echo "[INFO] Participating in coordinated update: starting countdown notice and verified shutdown..."
+
+          local follower_notice_minutes
+          follower_notice_minutes=${RESTART_NOTICE_MINUTES:-30}
+          echo "[INFO] Notifying players about update with $follower_notice_minutes minute notice"
+          notify_players_of_update $follower_notice_minutes
+
+          echo "[INFO] Countdown completed. Preparing follower for coordinated restart..."
+          shutdown_server_for_update || return 1
+          trigger_container_restart "FOLLOWER_COORDINATION_RESTART" "$current_build_id"
+        fi
+      elif update_coordination_is_master_role; then
+        if update_coordination_begin_cycle "$current_build_id"; then
+          echo "[INFO] This instance is the configured coordination master and will lead the shared update cycle"
+          update_coordination_start_heartbeat
+
+          local update_notice_minutes
+          update_notice_minutes=${RESTART_NOTICE_MINUTES:-30}
+          echo "[INFO] Notifying players about update with $update_notice_minutes minute notice"
+          notify_players_of_update $update_notice_minutes
+
+          echo "[INFO] Countdown completed. Stopping server for update..."
+          shutdown_server_for_update || return 1
+          echo "[INFO] Server shutdown confirmed. Update will be applied during container startup."
+          trigger_container_restart "UPDATE_RESTART" "$current_build_id"
+        elif update_coordination_has_active_cycle; then
+          echo "[INFO] Another coordination cycle was initiated. Participating in coordinated update..."
+          local notice_minutes
+          notice_minutes=${RESTART_NOTICE_MINUTES:-30}
+          echo "[INFO] Notifying players about update with $notice_minutes minute notice"
+          notify_players_of_update $notice_minutes
+
+          echo "[INFO] Countdown completed. Preparing server for coordinated restart..."
+          shutdown_server_for_update || return 1
+          trigger_container_restart "FOLLOWER_COORDINATION_RESTART" "$current_build_id"
+        else
           echo "[WARNING] Unable to create a new coordination cycle right now. Another cycle may already be active."
           exit 0
         fi
-
-        echo "[INFO] This instance is the configured coordination master and will lead the shared update cycle"
-        update_coordination_start_heartbeat
-
-        local update_notice_minutes
-        update_notice_minutes=${RESTART_NOTICE_MINUTES:-30}
-        echo "[INFO] Notifying players about update with $update_notice_minutes minute notice"
-        notify_players_of_update $update_notice_minutes
-
-        echo "[INFO] Countdown completed. Stopping server for update..."
-        shutdown_server_for_update || return 1
-        echo "[INFO] Server shutdown confirmed. Update will be applied during container startup."
-        trigger_container_restart "UPDATE_RESTART" "$current_build_id"
       else
         echo "[INFO] This instance is a coordination follower. Waiting briefly for the configured master to begin the cycle..."
 

@@ -192,15 +192,40 @@ update_coordination_all_participants_ready() {
   local participants_file=""
   local ready_dir=""
   local participant=""
+  local presence_file=""
+  local now=0
+  local updated_at=0
+  local INSTANCE_NAME=""
+  local UPDATED_AT=0
+  local RESTART_NOTICE_MINUTES=30
 
   update_coordination_refresh_state || return 1
   participants_file=$(update_coordination_participants_file) || return 1
   ready_dir="$(update_coordination_cycle_dir)/shutdown-ready"
   [ -f "$participants_file" ] || return 1
 
+  now=$(update_coordination_epoch)
+
   while IFS= read -r participant; do
     [ -n "$participant" ] || continue
-    [ -f "${ready_dir}/${participant}.ready" ] || return 1
+    if [ -f "${ready_dir}/${participant}.ready" ]; then
+      continue
+    fi
+
+    # If the participant has not written .ready, check if its instance presence is still active
+    presence_file="$(update_coordination_instances_dir)/${participant}.env"
+    if [ -f "$presence_file" ]; then
+      INSTANCE_NAME=""
+      UPDATED_AT=0
+      # shellcheck disable=SC1090
+      source "$presence_file" 2>/dev/null || true
+      updated_at="$UPDATED_AT"
+      if [[ "$updated_at" =~ ^[0-9]+$ ]] && [ $((now - updated_at)) -le "$UPDATE_COORDINATION_INSTANCE_STALE_SECONDS" ]; then
+        # The participant is still actively running and hasn't finished shutdown
+        return 1
+      fi
+    fi
+    # If presence file is missing or stale, the participant is no longer running ASA
   done < "$participants_file"
   return 0
 }

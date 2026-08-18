@@ -249,3 +249,24 @@ load '../test_helper/project.bash'
   assert_output --partial "update aborted"
   refute_output --partial "unexpected-live-sync"
 }
+
+@test "non-leader instances in install_server main wait for active coordination cycle release even if configured as MASTER" {
+  run env REPO_ROOT="$PROJECT_ROOT" bash -lc '
+    source "$REPO_ROOT/scripts/install_server.sh"
+    prepare_runtime_env() { ASA_DIR="$BATS_TEST_TMPDIR/asa"; mkdir -p "$ASA_DIR"; }
+    update_coordination_clear_waiting() { :; }
+    update_coordination_cleanup() { :; }
+    shared_update_policy_allows_automatic_updates() { return 0; }
+    update_coordination_enabled() { return 0; }
+    update_coordination_has_active_cycle() { return 0; }
+    update_coordination_is_active_leader() { return 1; }
+    UPDATE_COORDINATION_ROLE=MASTER
+    install_server_wait_for_coordination_release() { echo "waiting-for-leader-release:$1"; return 2; }
+    perform_staged_server_download() { echo "unexpected-download"; }
+    main
+  '
+
+  assert_success
+  assert_output --partial "waiting-for-leader-release"
+  refute_output --partial "unexpected-download"
+}
