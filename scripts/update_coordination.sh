@@ -717,14 +717,18 @@ update_coordination_cleanup() {
     phase_age=$((now - ${UPDATE_COORDINATION_STATE_PHASE_STARTED_AT:-0}))
     case "${UPDATE_COORDINATION_STATE_PHASE}" in
       ready|failed)
-        if [ "$phase_age" -ge "$UPDATE_COORDINATION_COMPLETED_RETENTION_SECONDS" ]; then
-          rm -f "$state_file"
-          update_coordination_release_claim_lock
-        fi
+        rm -f "$state_file"
+        update_coordination_release_claim_lock
         ;;
       pending_restart|leader_updating|leader_starting)
-        if [ "$phase_age" -ge "$UPDATE_COORDINATION_COMPLETED_RETENTION_SECONDS" ]; then
+        if update_coordination_leader_stale; then
+          update_coordination_mark_failed "Abandoned coordination cycle with stale leader heartbeat cleaned up"
+          rm -f "$state_file"
+          update_coordination_release_claim_lock
+        elif [ "$phase_age" -ge "$UPDATE_COORDINATION_COMPLETED_RETENTION_SECONDS" ]; then
           update_coordination_mark_failed "Abandoned coordination cycle cleaned up after retention threshold"
+          rm -f "$state_file"
+          update_coordination_release_claim_lock
         fi
         ;;
     esac

@@ -3163,6 +3163,31 @@ _coordination_wait_for_instance_ready() {
   return 1
 }
 
+_coordination_cleanup_stale_host_state() {
+  local -a running_instances=()
+  local current_dir="${BASE_DIR}/ServerFiles/arkserver/update_coordination/current"
+  local instances_dir="${BASE_DIR}/ServerFiles/arkserver/update_coordination/instances"
+  local lock_file="${BASE_DIR}/ServerFiles/arkserver/updating.flag"
+  local flags_dir="${BASE_DIR}/ServerFiles/arkserver/instance_flags"
+
+  running_instances=($(list_running_instances 2>/dev/null || true))
+  if [ "${#running_instances[@]}" -eq 0 ]; then
+    rm -rf "$current_dir" "$instances_dir" "$lock_file" "$flags_dir" 2>/dev/null || true
+    mkdir -p "$current_dir" "$instances_dir" "$flags_dir" 2>/dev/null || true
+  else
+    if [ -d "$instances_dir" ]; then
+      local presence_file instance_name
+      for presence_file in "${instances_dir}"/*.env; do
+        [ -f "$presence_file" ] || continue
+        instance_name=$(basename "$presence_file" .env)
+        if ! _coordination_instance_in_list "$instance_name" "${running_instances[@]}"; then
+          rm -f "$presence_file" 2>/dev/null || true
+        fi
+      done
+    fi
+  fi
+}
+
 _coordination_start_instance_subset() {
   local direct_output_mode="${1:-standard}"
   local coordinated_output_mode="${2:-coordinated_all}"
@@ -3178,6 +3203,7 @@ _coordination_start_instance_subset() {
 
   [ ${#requested_instances[@]} -gt 0 ] || return 0
 
+  _coordination_cleanup_stale_host_state
   normalize_update_coordination_assignments
 
   while IFS= read -r record; do
@@ -4431,6 +4457,8 @@ start_instance() {
   local instance_dir="${BASE_DIR}/Instance_${instance_name}"
   local docker_compose_file="${instance_dir}/docker-compose-${instance_name}.yaml"
   local image_tag=$(get_docker_image_tag "$instance_name")
+
+  _coordination_cleanup_stale_host_state
 
   case "$coordination_mode" in
     promote_single)

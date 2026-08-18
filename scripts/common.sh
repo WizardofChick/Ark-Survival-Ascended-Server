@@ -1436,7 +1436,7 @@ cleanup_legacy_locks() {
           local age_hours=$(((dirty_age % 86400) / 3600))
           local age_minutes=$(((dirty_age % 3600) / 60))
           
-          if [ "$context" = "aggressive" ] || [ $dirty_age -ge $dirty_threshold ]; then
+          if [ "$context" = "aggressive" ] || [ $dirty_age -ge $dirty_threshold ] || { [ "$context" = "startup" ] && [ -n "${INSTANCE_NAME:-}" ] && [ "$(basename "$dirty_file")" = "${INSTANCE_NAME}.dirty" ]; }; then
             echo "[INFO] Removing $(basename "$dirty_file") (age: ${age_days}d ${age_hours}h ${age_minutes}m)"
             rm -f "$dirty_file"
             cleaned_count=$((cleaned_count + 1))
