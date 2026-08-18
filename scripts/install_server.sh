@@ -188,7 +188,7 @@ main() {
     if update_coordination_is_active_leader; then
       COORDINATION_LEADER=true
       echo "[INFO] This instance is the active coordination leader for the current update cycle"
-    elif update_coordination_is_follower_role; then
+    else
       install_server_wait_for_coordination_release "${current_build_id:-$saved_build_id}"
       case $? in
         0)
@@ -244,7 +244,7 @@ main() {
         echo "[ERROR] Unable to begin the coordination cycle for startup installation"
         exit 1
       fi
-    elif update_coordination_is_follower_role; then
+    else
       install_server_wait_for_coordination_release "${current_build_id:-$saved_build_id}"
       case $? in
         0)

@@ -138,3 +138,75 @@ load '../test_helper/project.bash'
   assert_output --partial "unlock"
   refute_output --partial "unexpected-shutdown"
 }
+
+@test "update_server main participates in an active coordination cycle led by another instance even when configured as MASTER" {
+  run env REPO_ROOT="$PROJECT_ROOT" bash -lc '
+    set -e
+    source "$REPO_ROOT/scripts/update_server.sh"
+    UPDATE_SERVER=TRUE
+    UPDATE_COORDINATION_ROLE=MASTER
+    UPDATE_COORDINATION_PRIORITY=1
+    INSTANCE_NAME=beta
+    prepare_runtime_env() { :; }
+    get_current_build_id() { echo 24786897; }
+    get_build_id_from_acf() { echo 24718469; }
+    update_coordination_cleanup() { :; }
+    shared_update_policy_allows_automatic_updates() { return 0; }
+    remove_stale_lock() { :; }
+    server_needs_update() { return 0; }
+    rollback_state_is_active() { return 1; }
+    has_dirty_flag() { return 1; }
+    update_coordination_enabled() { return 0; }
+    update_coordination_has_active_cycle() { return 0; }
+    update_coordination_is_active_leader() { return 1; }
+    UPDATE_COORDINATION_STATE_ACTIVE_LEADER_INSTANCE="alpha"
+    notify_players_of_update() { printf "notice=%s\n" "$1"; }
+    shutdown_server_for_update() { echo "shutdown=verified"; return 0; }
+    trigger_container_restart() { printf "restart=%s:%s\n" "$1" "$2"; }
+    main
+  '
+
+  assert_success
+  assert_output --partial "Active coordination cycle detected (Leader: alpha)"
+  assert_output --partial "Participating in coordinated update: starting countdown notice and verified shutdown"
+  assert_output --partial "notice=30"
+  assert_output --partial "shutdown=verified"
+  assert_output --partial "restart=FOLLOWER_COORDINATION_RESTART:24786897"
+}
+
+@test "update_server main initiates coordination cycle when configured as MASTER and no cycle is active" {
+  run env REPO_ROOT="$PROJECT_ROOT" bash -lc '
+    set -e
+    source "$REPO_ROOT/scripts/update_server.sh"
+    UPDATE_SERVER=TRUE
+    UPDATE_COORDINATION_ROLE=MASTER
+    UPDATE_COORDINATION_PRIORITY=1
+    INSTANCE_NAME=alpha
+    prepare_runtime_env() { :; }
+    get_current_build_id() { echo 24786897; }
+    get_build_id_from_acf() { echo 24718469; }
+    update_coordination_cleanup() { :; }
+    shared_update_policy_allows_automatic_updates() { return 0; }
+    remove_stale_lock() { :; }
+    server_needs_update() { return 0; }
+    rollback_state_is_active() { return 1; }
+    has_dirty_flag() { return 1; }
+    update_coordination_enabled() { return 0; }
+    update_coordination_has_active_cycle() { return 1; }
+    update_coordination_is_master_role() { return 0; }
+    update_coordination_begin_cycle() { printf "cycle_created=%s\n" "$1"; return 0; }
+    update_coordination_start_heartbeat() { echo "heartbeat=started"; }
+    notify_players_of_update() { printf "notice=%s\n" "$1"; }
+    shutdown_server_for_update() { echo "shutdown=verified"; return 0; }
+    trigger_container_restart() { printf "restart=%s:%s\n" "$1" "$2"; }
+    main
+  '
+
+  assert_success
+  assert_output --partial "cycle_created=24786897"
+  assert_output --partial "This instance is the configured coordination master and will lead the shared update cycle"
+  assert_output --partial "heartbeat=started"
+  assert_output --partial "notice=30"
+  assert_output --partial "shutdown=verified"
+  assert_output --partial "restart=UPDATE_RESTART:24786897"
+}

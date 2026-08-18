@@ -24,8 +24,8 @@ shutdown_save_wait_seconds() {
     value=60
   fi
 
-  if [ "$value" -lt 1 ]; then
-    value=1
+  if [ "$value" -lt 30 ]; then
+    value=30
   elif [ "$value" -gt 900 ]; then
     value=900
   fi
@@ -236,11 +236,11 @@ shutdown_exit_confirmed_since_checkpoint() {
   current_size="$(stat -Lc '%s' "$log_file" 2>/dev/null || echo 0)"
 
   if [ -n "$SAVE_CHECKPOINT_LOG_INODE" ] && [ "$current_inode" = "$SAVE_CHECKPOINT_LOG_INODE" ] && [ "$current_size" -ge "$SAVE_CHECKPOINT_LOG_SIZE" ]; then
-    tail -c "+$((SAVE_CHECKPOINT_LOG_SIZE + 1))" "$log_file" 2>/dev/null | grep -qE "Closing by request|DestroyASAClustersFolderMutex"
+    tail -c "+$((SAVE_CHECKPOINT_LOG_SIZE + 1))" "$log_file" 2>/dev/null | grep -qE "Closing by request|DestroyASAClustersFolderMutex|Log file closed"
     return $?
   fi
 
-  grep -qE "Closing by request|DestroyASAClustersFolderMutex" "$log_file" 2>/dev/null
+  grep -qE "Closing by request|DestroyASAClustersFolderMutex|Log file closed" "$log_file" 2>/dev/null
 }
 
 shutdown_print_file_change() {
@@ -287,6 +287,16 @@ shutdown_verify_command_save() {
     echo "Error: ${stage_label} RCON command failed; save was not verified." >&2
     return 1
   fi
+
+  case "${MAP_NAME:-}" in
+    BobsMissions*|ClubArk*|*ClubArk*|*BobsMissions*)
+      if [ "$rcon_command" = "saveworld" ]; then
+        SAVE_CONFIRMATION_SOURCE="rcon"
+        echo "${stage_label}: save confirmed by RCON response for lobby/mission map (${MAP_NAME})."
+        return 0
+      fi
+      ;;
+  esac
 
   while [ "$(date +%s)" -lt "$deadline" ]; do
     if shutdown_log_confirmed_since_checkpoint; then

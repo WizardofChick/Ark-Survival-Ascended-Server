@@ -268,3 +268,44 @@ EOF
   assert_success
   assert_output --partial "status=3"
 }
+
+@test "update_coordination_all_participants_ready does not block on dead or stale participants" {
+  run env REPO_ROOT="$PROJECT_ROOT" bash -lc '
+    set -e
+    source "$REPO_ROOT/scripts/update_coordination.sh"
+    ASA_DIR="$BATS_TEST_TMPDIR/asa"
+    UPDATE_SERVER=TRUE
+    UPDATE_COORDINATION_ROLE=MASTER
+    UPDATE_COORDINATION_PRIORITY=1
+    INSTANCE_NAME=alpha
+    update_coordination_epoch() { echo 1000; }
+    update_coordination_mkdirs
+    update_coordination_touch_instance_presence
+    INSTANCE_NAME=beta
+    update_coordination_touch_instance_presence
+    INSTANCE_NAME=gamma
+    update_coordination_touch_instance_presence
+    INSTANCE_NAME=alpha
+    update_coordination_begin_cycle 24680
+    # Alpha and Beta acknowledge
+    INSTANCE_NAME=alpha
+    update_coordination_mark_shutdown_ready
+    INSTANCE_NAME=beta
+    update_coordination_mark_shutdown_ready
+    # Gamma presence becomes stale (simulating container crash/stop)
+    cat > "$(update_coordination_instances_dir)/gamma.env" <<EOF
+INSTANCE_NAME=gamma
+UPDATED_AT=500
+RESTART_NOTICE_MINUTES=30
+EOF
+    # All participants should be considered ready because gamma is stale
+    if update_coordination_all_participants_ready; then
+      echo "barrier=ready"
+    else
+      echo "barrier=waiting"
+    fi
+  '
+
+  assert_success
+  assert_output --partial "barrier=ready"
+}

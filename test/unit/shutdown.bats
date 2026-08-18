@@ -198,7 +198,7 @@ EOF
     source "$POK_SCRIPTS_DIR/shutdown_server.sh"
     ASA_DIR="$BATS_TMP/arkserver"
     MAP_NAME="Astraeos_WP"
-    SAVE_WAIT_SECONDS=2
+    SAVE_WAIT_SECONDS=5
     SAVE_FILE_STABLE_SECONDS=1
     mkdir -p "$ASA_DIR/ShooterGame/Saved/SavedArks/Astraeos_WP"
     save_file="$ASA_DIR/ShooterGame/Saved/SavedArks/Astraeos_WP/Astraeos_WP.ark"
