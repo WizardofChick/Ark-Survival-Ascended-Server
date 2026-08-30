@@ -832,7 +832,7 @@ To enable AsaApi on your server:
 
 When you enable the API feature:
 
-1. POK-manager installs the tested AsaApi 2.01 release and verifies its official SHA-256 checksum.
+1. POK-manager installs the tested AsaApi 2.03 release and verifies its official SHA-256 checksum.
 2. The verified release archive is retained in the shared server files for reliable reinstalls and custom-version rollback.
 3. Before Wine starts, native Linux `curl` downloads the cache matching the SHA-256 of `ArkAscendedServer.exe`.
 4. POK validates the archive, both serialized cache maps, and the core offsets required by the tested AsaApi release, then installs the cache atomically. The optional `cached_offsets.txt` diagnostic index is retained with the selected cache generation. AsaApi's Windows HTTPS downloader is disabled only after validation succeeds.
@@ -862,7 +862,7 @@ Advanced users can override the tested release by extracting a complete AsaApi r
 
 The directory must contain the release root, including `AsaApiLoader.exe`, `ArkApi/AsaApi.dll`, and `config.json`. While the directory exists, POK uses those files without overwriting them and leaves that version's cache behavior unchanged. Custom releases are unsupported and may fail under Wine.
 
-Remove `AsaApi_Custom` and restart the instance to restore the checksum-verified AsaApi 2.01 release automatically.
+Remove `AsaApi_Custom` and restart the instance to restore the checksum-verified AsaApi 2.03 release automatically.
 
 ### Special Handling for API Mode Restarts
 
@@ -921,12 +921,12 @@ This approach provides a robust solution for API mode servers, ensuring they can
 
 ### Windows Dependencies in Linux Environment
 
-AsaApi requires Windows-specific dependencies (specifically Microsoft Visual C++ 2019 Redistributable) to function. Despite running in a Linux environment, our solution handles this by:
+AsaApi requires Windows-specific dependencies (specifically the Microsoft Visual C++ 2015–2022 x64 Redistributable) to function. Despite running in a Linux environment, our solution handles this by:
 
-1. Automatically downloading the required Visual C++ 2019 Redistributable installer
+1. Automatically downloading the official Visual C++ x64 Redistributable installer
 2. Using Wine/Proton to install it within the Proton environment that runs the Windows-based ARK server
-3. Setting appropriate Wine DLL overrides to ensure the API loads properly
-4. Performing verification tests to confirm the API can load successfully
+3. Verifying the installed runtime DLLs before finalizing the image
+4. Reusing the same pinned Proton prefix for both AsaApi and the ARK server
 
 This approach allows you to use AsaApi seamlessly in our Linux-based container without having to manually install any Windows dependencies.
 
@@ -979,6 +979,12 @@ If you encounter issues with AsaApi or plugins:
    ls -la ./ServerFiles/arkserver/ShooterGame/Binaries/Win64/AsaApiLoader.exe
    ```
 
+   To test HTTPS from the same Windows WinHTTP stack and Proton prefix used by plugins, run:
+   ```bash
+   docker exec asa_server_my_instance /home/pok/scripts/proton_https_probe.sh https://ark-server-api.com/
+   ```
+   Replace `asa_server_my_instance` with the instance's container name. A successful request reports the HTTP status; certificate, DNS, and connection failures return a nonzero status with a Windows error code.
+
 3. Ensure plugin files are in the correct location and have the right permissions
 
 4. Common AsaApi issues in our Linux/Proton environment:
@@ -987,7 +993,7 @@ If you encounter issues with AsaApi or plugins:
    - Plugin compatibility: Some plugins may not work with our Linux/Proton setup or with the current version of ARK
    - `starting: waiting for AsaApi cache`: POK is safely checking the native cache for the current ARK executable. A detailed `starting: AsaApi cache ... is unusable` message identifies an executable-specific missing core offset; the server will start automatically only after the CDN publishes a compatible cache. Network-only failures should be investigated against `cdn.pelayori.com`.
    - Missing core offset after an ARK update: use `./POK-manager.sh -rollback -all` to stage and validate the last known-good server depot before the shared verified restart.
-   - Invalid custom override: Ensure `AsaApi_Custom` contains the complete release root and is readable by container UID/GID 7777, or remove the directory to restore managed 2.01.
+   - Invalid custom override: Ensure `AsaApi_Custom` contains the complete release root and is readable by container UID/GID 7777, or remove the directory to restore managed 2.03.
 
 5. If the API still doesn't work, try reinstalling it:
    ```bash

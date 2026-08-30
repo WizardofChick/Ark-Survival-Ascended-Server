@@ -71,12 +71,9 @@ check_proton_installations() {
   return 0
 }
 
-# Function to check and initialize Wine/Proton environment
 check_wine_environment() {
   echo "Checking Wine/Proton environment..."
-  
-  local WINE_CHECK_PASSED=false
-  
+
   # Set up virtual display for headless operation
   export DISPLAY=:0.0
   echo "Setting up virtual display at :0.0"
@@ -97,116 +94,13 @@ check_wine_environment() {
     echo "WARNING: Xvfb not found. X applications might not work properly."
   fi
   
-  # Check if Wine is available in PATH
-  if command -v wine >/dev/null 2>&1; then
-    echo "Wine binary found in PATH"
-    
-    # Set essential Wine environment variables
-    export WINEDLLOVERRIDES="*version=n,b;vcrun2022=n,b"
-    export WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx"
-    
-    # Test if Wine works
-    if DISPLAY=:0.0 WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx" wine --version >/dev/null 2>&1; then
-      echo "Wine basic functionality check: PASSED"
-      WINE_CHECK_PASSED=true
-    else
-      echo "Wine found but failed basic test. Trying to fix..."
-      # Try to set up Wine library paths
-      export LD_LIBRARY_PATH="/usr/lib/wine:/usr/lib32/wine:$LD_LIBRARY_PATH"
-      
-      # Test again
-      if DISPLAY=:0.0 WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx" wine --version >/dev/null 2>&1; then
-        echo "Wine basic functionality check after library path fix: PASSED"
-        WINE_CHECK_PASSED=true
-      else
-        echo "Wine basic functionality check: FAILED"
-      fi
-    fi
-  else
-    echo "Wine binary not found in PATH"
+  if ! initialize_proton_prefix; then
+    echo "Proton prefix initialization: FAILED"
+    return 1
   fi
-  
-  # Check/create Proton prefix
-  echo "Checking Proton prefix..."
-  local PREFIX_PATH="${STEAM_COMPAT_DATA_PATH}/pfx"
-  
-  check_create_directory "$PREFIX_PATH"
-  check_create_directory "$PREFIX_PATH/drive_c"
-  check_create_directory "$PREFIX_PATH/drive_c/windows/system32"
-  check_create_directory "$PREFIX_PATH/drive_c/Program Files"
-  check_create_directory "$PREFIX_PATH/drive_c/Program Files (x86)"
-  check_create_directory "$PREFIX_PATH/drive_c/users/steamuser"
-  
-  # Create required Wine registry files if they don't exist
-  for reg_file in "system.reg" "user.reg" "userdef.reg"; do
-    if [ ! -f "$PREFIX_PATH/$reg_file" ]; then
-      echo "Creating $reg_file..."
-      case "$reg_file" in
-        "system.reg")
-          echo "WINE REGISTRY Version 2" > "$PREFIX_PATH/$reg_file"
-          echo ";; All keys relative to \\\\Machine" >> "$PREFIX_PATH/$reg_file"
-          echo "#arch=win64" >> "$PREFIX_PATH/$reg_file"
-          echo "" >> "$PREFIX_PATH/$reg_file"
-          ;;
-        "user.reg")
-          echo "WINE REGISTRY Version 2" > "$PREFIX_PATH/$reg_file"
-          echo ";; All keys relative to \\\\User\\\\S-1-5-21-0-0-0-1000" >> "$PREFIX_PATH/$reg_file"
-          echo "#arch=win64" >> "$PREFIX_PATH/$reg_file"
-          echo "[Software\\\\Wine\\\\DllOverrides]" >> "$PREFIX_PATH/$reg_file"
-          echo "\"*version\"=\"native,builtin\"" >> "$PREFIX_PATH/$reg_file"
-        echo "\"vcrun2022\"=\"native,builtin\"" >> "$PREFIX_PATH/$reg_file"
-          echo "" >> "$PREFIX_PATH/$reg_file"
-          ;;
-        "userdef.reg")
-          echo "WINE REGISTRY Version 2" > "$PREFIX_PATH/$reg_file"
-          echo ";; All keys relative to \\\\User\\\\DefUser" >> "$PREFIX_PATH/$reg_file"
-          echo "#arch=win64" >> "$PREFIX_PATH/$reg_file"
-          echo "" >> "$PREFIX_PATH/$reg_file"
-          ;;
-      esac
-    else
-      # If user.reg exists but doesn't have DllOverrides, add them
-      if [ "$reg_file" = "user.reg" ] && ! grep -q "DllOverrides" "$PREFIX_PATH/$reg_file"; then
-        echo "Adding DLL overrides to user.reg..."
-        echo "[Software\\\\Wine\\\\DllOverrides]" >> "$PREFIX_PATH/$reg_file"
-        echo "\"*version\"=\"native,builtin\"" >> "$PREFIX_PATH/$reg_file"
-        echo "\"vcrun2022\"=\"native,builtin\"" >> "$PREFIX_PATH/$reg_file"
-      fi
-    fi
-  done
-  
-  # Make sure tracked_files exists
-  touch "${STEAM_COMPAT_DATA_PATH}/tracked_files" 2>/dev/null || true
-  
-  # Repair only entries that are missing required access bits. This avoids
-  # expensive metadata rewrites across an already-correct persisted prefix.
-  repair_proton_prefix_permissions "$PREFIX_PATH"
-  
-  # Create Visual C++ Redistributable directory structure for AsaApi
-  if [ "${API}" = "TRUE" ]; then
-    echo "Setting up Visual C++ directory structure for AsaApi..."
-    local vc_dir="$PREFIX_PATH/drive_c/Program Files (x86)/Microsoft Visual Studio"
-    check_create_directory "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT"
-    check_create_directory "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT"
 
-    # Create dummy DLL files to make AsaApiLoader believe VC++ is installed (both architectures)
-    touch "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT/msvcp140.dll"
-    touch "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT/vcruntime140.dll"
-    touch "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT/msvcp140.dll"
-    touch "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT/vcruntime140.dll"
-
-    # Trigger winetricks install if runtime DLLs are missing
-    if [ ! -f "$PREFIX_PATH/drive_c/windows/SysWOW64/msvcp140.dll" ] || \
-       [ ! -f "$PREFIX_PATH/drive_c/windows/SysWOW64/vcruntime140.dll" ] || \
-       [ ! -f "$PREFIX_PATH/drive_c/windows/system32/msvcp140.dll" ] || \
-       [ ! -f "$PREFIX_PATH/drive_c/windows/system32/vcruntime140.dll" ]; then
-      echo "Visual C++ runtime DLLs missing; attempting winetricks vcrun2022 install..."
-      WINEPREFIX="$PREFIX_PATH" winetricks -q vcrun2022 >/dev/null 2>&1 || true
-    fi
-  fi
-  
-  echo "Wine/Proton environment check: PASSED"
-  return 0
+  repair_proton_prefix_permissions "$WINEPREFIX"
+  echo "Pinned Proton environment check: PASSED"
 }
 
 # Function to check server files
