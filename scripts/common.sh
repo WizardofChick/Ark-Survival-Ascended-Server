@@ -123,6 +123,22 @@ resolve_pinned_proton() {
   return 0
 }
 
+set_pinned_proton_environment() {
+  export XDG_RUNTIME_DIR="${XDG_RUNTIME_DIR:-/tmp/pok-runtime-$(id -u)}"
+  export STEAM_COMPAT_CLIENT_INSTALL_PATH="${STEAM_COMPAT_CLIENT_INSTALL_PATH:-/home/pok/.steam/steam}"
+  export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH:-${STEAM_COMPAT_CLIENT_INSTALL_PATH}/steamapps/compatdata/2430930}"
+  export WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx"
+
+  mkdir -p "$XDG_RUNTIME_DIR" "$STEAM_COMPAT_CLIENT_INSTALL_PATH" "$STEAM_COMPAT_DATA_PATH"
+  chmod 700 "$XDG_RUNTIME_DIR" 2>/dev/null || true
+}
+
+run_with_pinned_proton() {
+  resolve_pinned_proton || return 1
+  set_pinned_proton_environment || return 1
+  "$POK_PROTON_EXECUTABLE" runinprefix "$@"
+}
+
 common_init() {
   USERNAME=anonymous
   APPID=2430930
@@ -281,95 +297,33 @@ prepare_runtime_env() {
   validate_server_password
 }
 
-# Function to initialize the Proton prefix
 initialize_proton_prefix() {
-  echo "Initializing Proton prefix at ${STEAM_COMPAT_DATA_PATH}..."
-  
-  # Make sure the prefix directory exists with correct permissions
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx"
-  
-  # Important: Ensure the top-level directory has proper permissions without recursing
-  chmod 755 "${STEAM_COMPAT_DATA_PATH}"
-  
-  # Create all necessary subdirectories with proper permissions
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/windows/system32"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/users/steamuser"
-  
-  # Create dosdevices directory and symlinks - missing in original code
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/dosdevices"
-  # The error was specifically about this symlink
-  ln -sf "../drive_c" "${STEAM_COMPAT_DATA_PATH}/pfx/dosdevices/c:"
-  ln -sf "/dev/null" "${STEAM_COMPAT_DATA_PATH}/pfx/dosdevices/d::"
-  ln -sf "/dev/null" "${STEAM_COMPAT_DATA_PATH}/pfx/dosdevices/e::"
-  ln -sf "/dev/null" "${STEAM_COMPAT_DATA_PATH}/pfx/dosdevices/f::"
-  
-  if ! resolve_pinned_proton; then
+  local marker=""
+
+  resolve_pinned_proton || return 1
+  set_pinned_proton_environment || return 1
+  marker="${STEAM_COMPAT_DATA_PATH}/.pok-proton-prefix-version"
+
+  if [ -s "$WINEPREFIX/system.reg" ] && [ -s "$WINEPREFIX/user.reg" ] && \
+      [ -f "$marker" ] && [ "$(tr -d '\r\n' < "$marker")" = "$POK_PROTON_VERSION" ]; then
+    echo "Using initialized Proton prefix for $POK_PROTON_VERSION."
+    return 0
+  fi
+
+  echo "Initializing Proton prefix with $POK_PROTON_VERSION at ${STEAM_COMPAT_DATA_PATH}..."
+  # Proton performs its own wineboot while creating/upgrading the compatdata
+  # prefix. A console command gives that setup path a reliable zero exit code;
+  # invoking wineboot.exe directly can return 3 even after successful setup.
+  if ! "$POK_PROTON_EXECUTABLE" runinprefix cmd.exe /c ver; then
+    echo "WARNING: Proton's initialization command returned nonzero; validating the resulting prefix." >&2
+  fi
+  if [ ! -s "$WINEPREFIX/system.reg" ] || [ ! -s "$WINEPREFIX/user.reg" ]; then
+    echo "ERROR: Proton initialization did not create a complete registry." >&2
     return 1
   fi
-  PROTON_PATH="$POK_PROTON_DIR"
-  echo "Using pinned Proton: $POK_PROTON_VERSION ($POK_PROTON_EXECUTABLE)"
-  
-  # Force reset the prefix configuration if it exists but might be corrupted
-  if [ -d "${STEAM_COMPAT_DATA_PATH}/pfx" ]; then
-    echo "Cleaning up previous Proton prefix configuration..."
-    
-    # Backup existing registry files if they exist
-    for reg_file in "system.reg" "user.reg" "userdef.reg"; do
-      if [ -f "${STEAM_COMPAT_DATA_PATH}/pfx/${reg_file}" ]; then
-        cp "${STEAM_COMPAT_DATA_PATH}/pfx/${reg_file}" "${STEAM_COMPAT_DATA_PATH}/pfx/${reg_file}.bak" 2>/dev/null || true
-      fi
-    done
-    
-    # Remove registry files to force clean initialization
-    rm -f "${STEAM_COMPAT_DATA_PATH}/pfx/system.reg" 2>/dev/null || true
-    rm -f "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg" 2>/dev/null || true
-    rm -f "${STEAM_COMPAT_DATA_PATH}/pfx/userdef.reg" 2>/dev/null || true
-  fi
-  
-  # Create minimal registry files
-  echo "Creating minimal Wine registry files..."
-  echo "WINE REGISTRY Version 2" > "${STEAM_COMPAT_DATA_PATH}/pfx/system.reg"
-  echo ";; All keys relative to \\\\Machine" >> "${STEAM_COMPAT_DATA_PATH}/pfx/system.reg"
-  echo "#arch=win64" >> "${STEAM_COMPAT_DATA_PATH}/pfx/system.reg"
-  echo "" >> "${STEAM_COMPAT_DATA_PATH}/pfx/system.reg"
-  
-  echo "WINE REGISTRY Version 2" > "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  echo ";; All keys relative to \\\\User\\\\S-1-5-21-0-0-0-1000" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  echo "#arch=win64" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  echo "[Software\\\\Wine\\\\DllOverrides]" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  echo "\"*version\"=\"native,builtin\"" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  echo "\"vcrun2022\"=\"native,builtin\"" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  echo "" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-  
-  echo "WINE REGISTRY Version 2" > "${STEAM_COMPAT_DATA_PATH}/pfx/userdef.reg"
-  echo ";; All keys relative to \\\\User\\\\DefUser" >> "${STEAM_COMPAT_DATA_PATH}/pfx/userdef.reg"
-  echo "#arch=win64" >> "${STEAM_COMPAT_DATA_PATH}/pfx/userdef.reg"
-  echo "" >> "${STEAM_COMPAT_DATA_PATH}/pfx/userdef.reg"
-  
-  # Make sure tracked_files exists
-  touch "${STEAM_COMPAT_DATA_PATH}/tracked_files" 2>/dev/null || true
-  
-  # Ensure created files have correct permissions (non-recursive to save time on large prefixes)
-  chmod 755 "${STEAM_COMPAT_DATA_PATH}/pfx" 2>/dev/null || true
-  
-  # Set necessary environment variables
-  export XDG_RUNTIME_DIR=/run/user/$(id -u)
-  export STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/pok/.steam/steam"
-  export STEAM_COMPAT_DATA_PATH="${STEAM_COMPAT_DATA_PATH}"
-  export WINEDLLOVERRIDES="version=n,b"
-  
-  # Sync filesystem to ensure all changes are written
-  sync
-  
-  # Sleep to ensure changes are propagated
-  sleep 5
-  
+
+  printf '%s\n' "$POK_PROTON_VERSION" > "$marker"
   echo "Proton prefix initialization completed."
-  return 0
 }
 
 # Timezone utility functions

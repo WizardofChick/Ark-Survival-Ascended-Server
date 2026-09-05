@@ -15,6 +15,24 @@ load '../test_helper/project.bash'
   assert_output --partial "main=function"
 }
 
+@test "all server launch paths use the already-prepared pinned Proton prefix" {
+  run env REPO_ROOT="$PROJECT_ROOT" bash -lc '
+    set -e
+    launch_script="$REPO_ROOT/scripts/launch_ASA.sh"
+    if grep -Fq "\"\$PROTON_EXECUTABLE\" run " "$launch_script"; then
+      printf "%s\n" "unexpected Proton run entrypoint"
+      exit 1
+    fi
+    count="$(grep -Fc "\"\$PROTON_EXECUTABLE\" runinprefix" "$launch_script")"
+    printf "runinprefix_count=%s\n" "$count"
+    [ "$count" -ge 1 ]
+  '
+
+  assert_success
+  assert_output --partial "runinprefix_count="
+  refute_output --partial "unexpected Proton run entrypoint"
+}
+
 @test "Proton console filtering hides only the misleading direct-launch unit-test warning" {
   run env REPO_ROOT="$PROJECT_ROOT" BATS_TMP="$BATS_TEST_TMPDIR/proton-filter" bash -lc '
     set -e

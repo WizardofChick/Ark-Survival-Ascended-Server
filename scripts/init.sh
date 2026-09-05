@@ -186,7 +186,7 @@ if [ -f "/home/pok/restart_reason.flag" ] && [ "$(cat /home/pok/restart_reason.f
   if [ "${API}" = "TRUE" ]; then
     echo "🖥️ API mode container recovery - setting up fresh environment..."
     # Force a complete environment reset
-    export XDG_RUNTIME_DIR=/run/user/$(id -u)
+    export XDG_RUNTIME_DIR=/tmp/pok-runtime-$(id -u)
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/pok/.steam/steam"
     export STEAM_COMPAT_DATA_PATH="/home/pok/.steam/steam/steamapps/compatdata/2430930"
     export WINEDLLOVERRIDES="version=n,b"
@@ -229,7 +229,7 @@ if [ "$1" = "--from-restart" ] || [ -f "/tmp/restart_in_progress" ]; then
   # Force reset environment variables that are critical for API mode
   if [ "${API}" = "TRUE" ]; then
     echo "🖥️ Forcing Xvfb setup for API restart mode..."
-    export XDG_RUNTIME_DIR=/run/user/$(id -u)
+    export XDG_RUNTIME_DIR=/tmp/pok-runtime-$(id -u)
     export STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/pok/.steam/steam"
     export STEAM_COMPAT_DATA_PATH="/home/pok/.steam/steam/steamapps/compatdata/2430930"
     export WINEDLLOVERRIDES="version=n,b"
@@ -475,18 +475,12 @@ setup_virtual_display() {
   fi
   
   # Export essential display environment variables
-  export WINEDLLOVERRIDES="*version=n,b;vcrun2022=n,b"
-  export WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx"
+  export WINEDLLOVERRIDES="version=n,b"
 }
 
 # Robust AsaApi initialization for container environment
 verify_proton_environment() {
-  echo "----Robust Proton Environment Verification for AsaApi----"
-
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/windows/system32"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)"
-  mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/users/steamuser"
+  echo "----Pinned Proton Environment Verification----"
 
   if ! resolve_pinned_proton; then
     echo "ERROR: The image-pinned Proton installation failed verification." >&2
@@ -495,23 +489,12 @@ verify_proton_environment() {
   echo "Using image-pinned Proton: $POK_PROTON_VERSION"
   echo "Proton executable: $POK_PROTON_EXECUTABLE"
 
-  echo "Force resetting Proton prefix for clean environment..."
+  echo "Ensuring the pinned Proton prefix is initialized..."
   initialize_proton_prefix || return 1
 
   echo "Setting correct permissions for top-level directories..."
   chmod 755 "${STEAM_COMPAT_DATA_PATH}"
   chmod 755 "$(dirname "$POK_PROTON_DIR")"
-
-  sync
-  sleep 3
-
-  echo "Testing Wine functionality..."
-  if WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx" wine --version >/dev/null 2>&1; then
-    echo "Wine is functional in the environment."
-  else
-    echo "WARNING: Wine does not appear to be functioning correctly."
-    export LD_LIBRARY_PATH="/usr/lib/wine:/usr/lib32/wine:$LD_LIBRARY_PATH"
-  fi
 
   echo "Proton environment verification completed."
 }
@@ -549,7 +532,7 @@ fi
 
 # Set essential Proton/Wine environment variables regardless of API setting
 # These need to be set for both API=TRUE and API=FALSE cases
-export XDG_RUNTIME_DIR=/run/user/$(id -u)
+export XDG_RUNTIME_DIR=/tmp/pok-runtime-$(id -u)
 export STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/pok/.steam/steam"
 export STEAM_COMPAT_DATA_PATH="/home/pok/.steam/steam/steamapps/compatdata/2430930"
 export WINEDLLOVERRIDES="version=n,b"
@@ -590,12 +573,6 @@ if [ "${API}" = "TRUE" ]; then
     mkdir -p "${ASA_DIR}/ShooterGame/Binaries/Win64/logs"
     chmod -R 755 "${ASA_DIR}/ShooterGame/Binaries/Win64"
     
-    # Pre-test AsaApiLoader.exe with Wine to ensure it can be found and executed
-    if WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx" wine "${ASA_DIR}/ShooterGame/Binaries/Win64/AsaApiLoader.exe" --help >/dev/null 2>&1; then
-      echo "  ✅ AsaApiLoader.exe is executable"
-    else
-      echo "  ℹ️ AsaApiLoader.exe test execution returned expected result"
-    fi
   else
     echo "  ⚠️ AsaApi loader not found after installation attempt"
   fi

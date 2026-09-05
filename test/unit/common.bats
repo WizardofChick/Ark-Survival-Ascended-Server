@@ -112,6 +112,60 @@ load '../test_helper/project.bash'
   refute_output --partial "result=unexpected-success"
 }
 
+@test "initialize_proton_prefix uses pinned Proton maintenance and records its version" {
+  run env REPO_ROOT="$PROJECT_ROOT" TEST_ROOT="$BATS_TEST_TMPDIR/prefix-new" bash -lc '
+    set -e
+    source "$REPO_ROOT/scripts/common.sh"
+    proton_root="$TEST_ROOT/proton"
+    STEAM_COMPAT_CLIENT_INSTALL_PATH="$TEST_ROOT/steam"
+    STEAM_COMPAT_DATA_PATH="$TEST_ROOT/compatdata/2430930"
+    mkdir -p "$proton_root/GE-Proton10-34"
+    printf "%s\n" "#!/bin/bash" \
+      "printf \"%s\\n\" \"\$*\" > \"$TEST_ROOT/proton.args\"" \
+      "mkdir -p \"\$STEAM_COMPAT_DATA_PATH/pfx\"" \
+      "printf registry > \"\$STEAM_COMPAT_DATA_PATH/pfx/system.reg\"" \
+      "printf registry > \"\$STEAM_COMPAT_DATA_PATH/pfx/user.reg\"" \
+      > "$proton_root/GE-Proton10-34/proton"
+    chmod +x "$proton_root/GE-Proton10-34/proton"
+    ln -s "$proton_root/GE-Proton10-34" "$proton_root/GE-Proton-Current"
+    printf "GE-Proton10-34\n" > "$proton_root/.pok-proton-version"
+    POK_PROTON_BASE_DIR="$proton_root"
+    initialize_proton_prefix
+    printf "args=%s\n" "$(cat "$TEST_ROOT/proton.args")"
+    printf "marker=%s\n" "$(cat "$STEAM_COMPAT_DATA_PATH/.pok-proton-prefix-version")"
+  '
+
+  assert_success
+  assert_output --partial "args=runinprefix cmd.exe /c ver"
+  assert_output --partial "marker=GE-Proton10-34"
+}
+
+@test "initialize_proton_prefix preserves a complete matching prefix" {
+  run env REPO_ROOT="$PROJECT_ROOT" TEST_ROOT="$BATS_TEST_TMPDIR/prefix-existing" bash -lc '
+    set -e
+    source "$REPO_ROOT/scripts/common.sh"
+    proton_root="$TEST_ROOT/proton"
+    STEAM_COMPAT_CLIENT_INSTALL_PATH="$TEST_ROOT/steam"
+    STEAM_COMPAT_DATA_PATH="$TEST_ROOT/compatdata/2430930"
+    mkdir -p "$proton_root/GE-Proton10-34" "$STEAM_COMPAT_DATA_PATH/pfx"
+    printf "%s\n" "#!/bin/bash" "touch \"$TEST_ROOT/unexpected-proton-call\"" \
+      > "$proton_root/GE-Proton10-34/proton"
+    chmod +x "$proton_root/GE-Proton10-34/proton"
+    ln -s "$proton_root/GE-Proton10-34" "$proton_root/GE-Proton-Current"
+    printf "GE-Proton10-34\n" > "$proton_root/.pok-proton-version"
+    printf "sentinel-system\n" > "$STEAM_COMPAT_DATA_PATH/pfx/system.reg"
+    printf "sentinel-user\n" > "$STEAM_COMPAT_DATA_PATH/pfx/user.reg"
+    printf "GE-Proton10-34\n" > "$STEAM_COMPAT_DATA_PATH/.pok-proton-prefix-version"
+    POK_PROTON_BASE_DIR="$proton_root"
+    initialize_proton_prefix
+    printf "system=%s\n" "$(cat "$STEAM_COMPAT_DATA_PATH/pfx/system.reg")"
+    test ! -e "$TEST_ROOT/unexpected-proton-call"
+  '
+
+  assert_success
+  assert_output --partial "system=sentinel-system"
+}
+
 @test "managed AsaApi cache failures expose the incompatible symbol while retrying" {
   run env REPO_ROOT="$PROJECT_ROOT" BATS_TMP="$BATS_TEST_TMPDIR/asaapi-cache-wait" bash -lc '
     set -e

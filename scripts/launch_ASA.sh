@@ -253,32 +253,6 @@ setup_arkserverapi() {
       echo "✅ AsaApiLoader.exe found at $ASA_PLUGIN_BINARY_PATH"
     fi
     
-    # Verify if Visual C++ Redistributable might be installed in the Proton prefix
-    local vcredist_marker="${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio"
-    
-    if [ ! -d "$vcredist_marker" ]; then
-      echo "Visual C++ Redistributable marker not found. Creating directory structure..."
-      mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT"
-      mkdir -p "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT"
-    else
-      echo "Visual C++ Redistributable directory structure exists."
-    fi
-
-    # Ensure dummy files exist to satisfy AsaApi loader expectations
-    touch "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT/msvcp140.dll"
-    touch "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT/vcruntime140.dll"
-    touch "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT/msvcp140.dll"
-    touch "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT/vcruntime140.dll"
-
-    # If actual redistributable DLLs are missing, attempt a silent reinstall
-    if [ ! -f "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/windows/SysWOW64/msvcp140.dll" ] || \
-       [ ! -f "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/windows/SysWOW64/vcruntime140.dll" ] || \
-       [ ! -f "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/windows/system32/msvcp140.dll" ] || \
-       [ ! -f "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/windows/system32/vcruntime140.dll" ]; then
-      echo "Visual C++ runtime DLLs missing; running winetricks vcrun2022..."
-      WINEPREFIX="${STEAM_COMPAT_DATA_PATH}/pfx" winetricks -q vcrun2022 >/dev/null 2>&1 || true
-    fi
-    
     # Set DLL overrides to ensure API loads properly
     export WINEDLLOVERRIDES="version=n,b"
     echo "Set DLL overrides for AsaApi"
@@ -429,7 +403,7 @@ start_server() {
   export WINEDLLOVERRIDES="version=n,b"
   
   # Ensure proper environment variables are set
-  export XDG_RUNTIME_DIR=/run/user/$(id -u)
+  export XDG_RUNTIME_DIR=/tmp/pok-runtime-$(id -u)
   export STEAM_COMPAT_CLIENT_INSTALL_PATH="/home/pok/.steam/steam"
   export STEAM_COMPAT_DATA_PATH="/home/pok/.steam/steam/steamapps/compatdata/2430930"
   
@@ -453,32 +427,6 @@ start_server() {
     echo "Setting up additional AsaApi environment variables..."
     mkdir -p "${ASA_DIR}/ShooterGame/Binaries/Win64/logs"
     chmod -R 755 "${ASA_DIR}/ShooterGame/Binaries/Win64"
-    
-    # For AsaApiLoader, ensure missing registry entries don't cause issues
-    if [ -f "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg" ]; then
-      if ! grep -q "vcrun2022" "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"; then
-        echo "Adding vcrun2022 DLL override to Wine registry..."
-        echo "[Software\\\\Wine\\\\DllOverrides]" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-        echo "\"vcrun2022\"=\"native,builtin\"" >> "${STEAM_COMPAT_DATA_PATH}/pfx/user.reg"
-      fi
-    fi
-    
-    # Verify Visual C++ Redistributable installation
-    if [ ! -d "${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio" ]; then
-      echo "Visual C++ Redistributable not detected, creating directory structure..."
-      # Create directory structure to make AsaApiLoader believe VC++ is installed
-      local vc_dir="${STEAM_COMPAT_DATA_PATH}/pfx/drive_c/Program Files (x86)/Microsoft Visual Studio"
-      mkdir -p "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT"
-      mkdir -p "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x86/Microsoft.VC143.CRT"
-
-      # Create dummy files
-      touch "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT/msvcp140.dll"
-      touch "$vc_dir/2022/BuildTools/VC/Redist/MSVC/14.44.35211/x64/Microsoft.VC143.CRT/vcruntime140.dll"
-    fi
-    
-    # Sync to ensure all changes are written
-    sync
-    sleep 2
     
     # Define a function to make a launch attempt
     attempt_launch() {
@@ -540,7 +488,7 @@ start_server() {
               # Set DISPLAY variable to prevent X server errors
               export DISPLAY=:0.0
               # Method 1: Direct Proton launch using found executable
-              "$PROTON_EXECUTABLE" run "$binary" $params > /tmp/launch_output.log 2>&1 &
+              "$PROTON_EXECUTABLE" runinprefix "$binary" $params > /tmp/launch_output.log 2>&1 &
             else
               echo "[WARNING] Proton executable not found, skipping this method."
               return 1
@@ -549,7 +497,7 @@ start_server() {
           "proton_retry")
             export DISPLAY=:0.0
             echo "[INFO] Retrying launch with pinned Proton $POK_PROTON_VERSION"
-            "$PROTON_EXECUTABLE" run "$binary" $params > /tmp/launch_output.log 2>&1 &
+            "$PROTON_EXECUTABLE" runinprefix "$binary" $params > /tmp/launch_output.log 2>&1 &
             ;;
         esac
         
@@ -611,7 +559,7 @@ start_server() {
               # Set DISPLAY variable to prevent X server errors
               export DISPLAY=:0.0
               # Method 1: Direct Proton launch using found executable
-              "$PROTON_EXECUTABLE" run "$binary" $params > /tmp/launch_output.log 2>&1 &
+              "$PROTON_EXECUTABLE" runinprefix "$binary" $params > /tmp/launch_output.log 2>&1 &
             else
               echo "[WARNING] Proton executable not found, skipping this method."
               return 1
@@ -620,7 +568,7 @@ start_server() {
           "proton_retry")
             export DISPLAY=:0.0
             echo "[INFO] Retrying launch with pinned Proton $POK_PROTON_VERSION"
-            "$PROTON_EXECUTABLE" run "$binary" $params > /tmp/launch_output.log 2>&1 &
+            "$PROTON_EXECUTABLE" runinprefix "$binary" $params > /tmp/launch_output.log 2>&1 &
             ;;
         esac
         
@@ -700,7 +648,7 @@ start_server() {
       else
         echo "Retrying launch with pinned Proton $POK_PROTON_VERSION"
       fi
-      "$PROTON_EXECUTABLE" run "$LAUNCH_BINARY_NAME" $server_params \
+      "$PROTON_EXECUTABLE" runinprefix "$LAUNCH_BINARY_NAME" $server_params \
         > >(filter_proton_runtime_output) \
         2> >(filter_proton_runtime_output >&2) &
       proton_launcher_pid=$!

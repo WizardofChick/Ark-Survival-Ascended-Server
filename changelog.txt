@@ -1,9 +1,17 @@
-## Version 2.1.81 (Latest)
+## Version 2.1.82 (Latest)
+- Upgraded the container to Ubuntu 24.04 and pinned GE-Proton 10-34 for current Linux runtime and certificate support.
+- Fixed ASA and AsaApi startup under Proton by using one real Proton-managed prefix instead of mixing distro Wine, fake registry files, and placeholder DLLs.
+- Fixed server launches that stalled inside Proton by using the prepared prefix directly for both API and non-API modes.
+- Updated the managed, checksum-verified AsaApi release from 2.01 to 2.03 while preserving plugins and configuration.
+- Kept the native Linux AsaApi cache download because it avoids unreliable Windows HTTPS under Proton and verifies that offsets match the installed ARK executable before launch.
+- Added an image-built Windows HTTPS diagnostic to help troubleshoot future AsaApi plugin connection or certificate changes.
+- Validated CrossChat Ascended 1.7.4 with MariaDB through startup, restart, RCON health, database creation, and clean shutdown.
+
+## Version 2.1.81 (Previous)
 - Fixed multi-instance auto-update coordination deadlocks by ensuring all running instances participate in active update cycles, broadcast countdown notices to players, and acknowledge the verified shutdown barrier.
 - Optimized server stop and save verification with lobby/mission map RCON acknowledgement, log-closed exit detection, and instant parallel container removal to eliminate unnecessary shutdown delays.
 - Automatically cleaned up stale coordination cycles, abandoned leader locks, and instance dirty flags upon container boot and cold manager starts to prevent followers from stalling on dead leaders.
 - Removed RCON broadcast calls from the background read-only update notifier (`update_notice_monitor.sh`), avoiding premature RCON connection timeouts during server startup while continuing to log update availability warnings to the console for administrators.
-- Upgraded container base image from Ubuntu 22.04 (Jammy) to Ubuntu 24.04 LTS (Noble Numbat) and updated pinned GE-Proton from 10-33 to 10-34. This provides GLIBC 2.39, updated OpenSSL 3.0, GnuTLS 3.8, and 2024 CA certificates, with package names aligned for Ubuntu 24.04 (`libldap2`, `libasound2t64`, `libgl1`), resolving AsaApi plugin SSL/TLS connection failures (GitHub #135).
 - Fixed `-update` to honor the saved Docker sudo preference for image pulls and every temporary-container operation, fail promptly in unattended jobs when configured sudo authorization is unavailable, and return a failure status when SteamCMD retries are exhausted.
 - Moved multi-gigabyte SteamCMD update staging out of Docker's writable `/tmp` layer and onto `ServerFiles/arkserver/.pok-manager/update/staging`, aligning the actual download with the manager's host free-space validation while retaining explicit `TEMP_DOWNLOAD_ROOT` overrides.
 - Made automatic ARK updates a shared-installation policy: any configured `API=TRUE` or `UPDATE_SERVER=FALSE` instance now blocks automatic file replacement for every instance sharing `ServerFiles/arkserver`, while a read-only notifier reports pending manual maintenance.

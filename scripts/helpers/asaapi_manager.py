@@ -20,9 +20,9 @@ import time
 import zipfile
 
 
-BASE_VERSION = "2.01"
-BASE_URL = "https://github.com/ArkServerApi/AsaApi/releases/download/2.01/AsaApi_2.01.zip"
-BASE_SHA256 = "4cc3afdb5d272e196ee5f4293daac4ece84c86cd6c8e8302c2a6f58cd0dbc496"
+BASE_VERSION = "2.03"
+BASE_URL = "https://github.com/ArkServerApi/AsaApi/releases/download/2.03/AsaApi_2.03.zip"
+BASE_SHA256 = "ac72fb29436198ac062cd273e1c496b1ef4e6ffddeec08243d11d9b35e8b8ae3"
 DEFAULT_CACHE_URL = "https://cdn.pelayori.com/cache/"
 
 EXIT_RETRY = 10
@@ -614,7 +614,7 @@ def prepare_cache(args: argparse.Namespace) -> int:
             log("INFO", "Custom AsaApi source selected; leaving its cache behavior unchanged")
             return EXIT_CUSTOM
         if state.get("source") != "managed" or state.get("version") != BASE_VERSION:
-            raise InvalidError("Managed AsaApi 2.01 source state is not ready")
+            raise InvalidError(f"Managed AsaApi {BASE_VERSION} source state is not ready")
         if not server_exe.is_file():
             raise InvalidError(f"ARK server executable is missing: {server_exe}")
 
