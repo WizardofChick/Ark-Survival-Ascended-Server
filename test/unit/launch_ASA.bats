@@ -33,16 +33,24 @@ load '../test_helper/project.bash'
   refute_output --partial "unexpected Proton run entrypoint"
 }
 
-@test "Proton console filtering hides only the misleading direct-launch unit-test warning" {
+@test "Proton console filtering hides routine noise while retaining complete diagnostics" {
   run env REPO_ROOT="$PROJECT_ROOT" BATS_TMP="$BATS_TEST_TMPDIR/proton-filter" bash -lc '
     set -e
     source "$REPO_ROOT/scripts/launch_ASA.sh"
     mkdir -p "$BATS_TMP"
     PROTON_RUNTIME_LOG="$BATS_TMP/proton.log"
+    console_log="$BATS_TMP/console.log"
     printf "%s\n" \
       "ProtonFixes[324] WARN: Skipping fix execution. We are probably running a unit test." \
+      "09-14 09:48:04.646 204 708 I Info/GameAnalytics : Event queue: Sending 3 events." \
+      "09-14 09:48:04.649 204 708 D Debug/GameAnalytics : Sending events URL" \
       "Proton: Upgrading prefix from None to GE-Proton10-34" \
-      "wine: example actionable failure" | filter_proton_runtime_output
+      "wine: example actionable failure" | filter_proton_runtime_output > "$console_log"
+    ! grep -Eq "(Info|Debug)/GameAnalytics" "$console_log"
+    print_proton_runtime_diagnostics "$PROTON_RUNTIME_LOG" > "$BATS_TMP/failure-summary.log"
+    ! grep -Eq "(Info|Debug)/GameAnalytics" "$BATS_TMP/failure-summary.log"
+    grep -Fq "wine: example actionable failure" "$BATS_TMP/failure-summary.log"
+    cat "$console_log"
     printf "%s\n" "---raw-diagnostics---"
     cat "$PROTON_RUNTIME_LOG"
   '
@@ -52,7 +60,10 @@ load '../test_helper/project.bash'
   assert_line "wine: example actionable failure"
   assert_output --partial "---raw-diagnostics---"
   assert_output --partial "ProtonFixes[324] WARN: Skipping fix execution. We are probably running a unit test."
+  assert_output --partial "Info/GameAnalytics : Event queue: Sending 3 events."
+  assert_output --partial "Debug/GameAnalytics : Sending events URL"
   [ "$(printf "%s\n" "$output" | grep -c "probably running a unit test")" -eq 1 ]
+  [ "$(printf "%s\n" "$output" | grep -Ec "(Info|Debug)/GameAnalytics")" -eq 2 ]
 }
 
 @test "AsaApi console filtering removes fixed startup boilerplate but keeps operational lines" {
@@ -137,7 +148,7 @@ EOF
   assert_output --partial "second=advertising"
 }
 
-@test "start_log_tail mirrors complete lines and follows log replacement" {
+@test "start_log_tail filters GameAnalytics telemetry and follows log replacement" {
   run env REPO_ROOT="$PROJECT_ROOT" bash -lc '
     set -e
     source "$REPO_ROOT/scripts/launch_ASA.sh"
@@ -145,7 +156,10 @@ EOF
     captured="$BATS_TEST_TMPDIR/container.log"
     printf "%s\n" "Log file open" > "$log_file"
 
-    start_log_tail "$log_file" GAME_TAIL_PID > "$captured" 2>&1
+    start_log_tail "$log_file" GAME_TAIL_PID shootergame > "$captured" 2>&1
+    printf "%s\n" \
+      "09-14 09:47:40.547 204 708 I Info/GameAnalytics : Event queue: No events to send" \
+      "09-14 09:48:04.649 204 708 D Debug/GameAnalytics : Sending events URL" >> "$log_file"
     printf "%s\n" "Commandline: Map?ServerPassword=joinSecret?ServerAdminPassword=adminSecret! -Port=7777" >> "$log_file"
 
     for _ in $(seq 1 50); do
@@ -179,6 +193,8 @@ EOF
   assert_output --partial "ServerPassword=joinSecret"
   assert_output --partial "ServerAdminPassword=adminSecret!"
   assert_output --partial "Server has completed startup and is now advertising for join"
+  refute_output --partial "Info/GameAnalytics"
+  refute_output --partial "Debug/GameAnalytics"
   assert_output --partial "tail-stopped"
 }
 
