@@ -23,6 +23,21 @@ proton_output_is_direct_launch_hook_warning() {
   [[ "$line" =~ ^ProtonFixes\[[0-9]+\]\ WARN:\ Skipping\ fix\ execution\.\ We\ are\ probably\ running\ a\ unit\ test\.$ ]]
 }
 
+console_output_is_gameanalytics_telemetry() {
+  local line="$1"
+
+  [[ "$line" =~ (Info|Debug)/GameAnalytics[[:space:]]*: ]]
+}
+
+filter_game_console_output() {
+  local line=""
+
+  while IFS= read -r line || [ -n "$line" ]; do
+    console_output_is_gameanalytics_telemetry "$line" && continue
+    printf '%s\n' "$line"
+  done
+}
+
 filter_proton_runtime_output() {
   local line=""
   local diagnostic_log="${PROTON_RUNTIME_LOG:-/home/pok/logs/proton_runtime.log}"
@@ -30,6 +45,9 @@ filter_proton_runtime_output() {
   while IFS= read -r line || [ -n "$line" ]; do
     printf '%s\n' "$line" >> "$diagnostic_log"
     if proton_output_is_direct_launch_hook_warning "$line"; then
+      continue
+    fi
+    if console_output_is_gameanalytics_telemetry "$line"; then
       continue
     fi
     printf '%s\n' "$line"
@@ -45,6 +63,7 @@ print_proton_runtime_diagnostics() {
   filtered_log=$(mktemp "${TMPDIR:-/tmp}/pok-proton-diagnostics.XXXXXX") || return 1
   while IFS= read -r line || [ -n "$line" ]; do
     proton_output_is_direct_launch_hook_warning "$line" && continue
+    console_output_is_gameanalytics_telemetry "$line" && continue
     printf '%s\n' "$line" >> "$filtered_log"
   done < "$diagnostic_log"
   tail -20 "$filtered_log"
@@ -77,6 +96,10 @@ start_log_tail() {
     # The source log remains complete on disk. The container console omits only
     # AsaApi's fixed startup banner/cache boilerplate and keeps operational lines.
     tail -n +1 -F "$log_file" > >(filter_asaapi_console_output) &
+  elif [ "$output_mode" = "shootergame" ]; then
+    # ShooterGame.log remains complete on disk while routine built-in
+    # GameAnalytics telemetry is omitted from the container console.
+    tail -n +1 -F "$log_file" > >(filter_game_console_output) &
   else
     tail -n +1 -F "$log_file" &
   fi
@@ -732,7 +755,7 @@ start_server() {
         echo "---------------------------------------------"
         echo "📋 ARK SERVER LOG OUTPUT:"
         echo "---------------------------------------------"
-        start_log_tail "$game_log" GAME_TAIL_PID
+        start_log_tail "$game_log" GAME_TAIL_PID shootergame
         return 0
       fi
       printf "\r🔍 Waiting for ShooterGame.log... (%ds elapsed)      " "$elapsed"
